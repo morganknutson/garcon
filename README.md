@@ -1,3 +1,11 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/garcon-darkmode.png">
+    <source media="(prefers-color-scheme: light)" srcset="assets/garcon-lightmode.png">
+    <img src="assets/garcon-lightmode.png" alt="Garçon logo" width="446">
+  </picture>
+</p>
+
 # Garçon!
 
 Garçon! is a lightweight macOS menu bar app that shows local web servers, their ports, and quick actions to open or stop them.
