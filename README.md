@@ -35,8 +35,8 @@ xcode-select --install
 ### From Source
 
 ```bash
-git clone https://github.com/morganknutson/garson.git
-cd garson
+git clone https://github.com/morganknutson/garcon.git
+cd garcon
 swift run Garcon
 ```
 
