@@ -40,6 +40,20 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 cp "$BINARY_PATH" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 chmod +x "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 
+# SwiftPM resources are emitted as *.bundle directories. Copy them into the app.
+BINARY_DIR="$(cd "$(dirname "$BINARY_PATH")" && pwd)"
+RESOURCE_BUNDLES="$(find "$BINARY_DIR" -maxdepth 1 -type d -name '*.bundle' | sort || true)"
+if [[ -z "$RESOURCE_BUNDLES" ]]; then
+  RESOURCE_BUNDLES="$(find .build -type d -path '*/release/*.bundle' | sort || true)"
+fi
+
+if [[ -n "$RESOURCE_BUNDLES" ]]; then
+  while IFS= read -r bundle_path; do
+    [[ -n "$bundle_path" ]] || continue
+    cp -R "$bundle_path" "$APP_BUNDLE/Contents/Resources/"
+  done <<< "$RESOURCE_BUNDLES"
+fi
+
 cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
