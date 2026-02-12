@@ -14,6 +14,7 @@ ARCH="$(uname -m)"
 SKIP_SIGNING="${SKIP_SIGNING:-0}"
 SIGN_IDENTITY="${SIGN_IDENTITY:-}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
+APP_ICON_SOURCE="${APP_ICON_SOURCE:-}"
 
 echo "Building $APP_NAME $VERSION for macOS ($ARCH)..."
 
@@ -42,6 +43,59 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 
 cp "$BINARY_PATH" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 chmod +x "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+
+resolve_app_icon_source() {
+  if [[ -n "$APP_ICON_SOURCE" && -f "$APP_ICON_SOURCE" ]]; then
+    echo "$APP_ICON_SOURCE"
+    return 0
+  fi
+
+  if [[ -f "$ROOT_DIR/assets/AppIcon-1024.png" ]]; then
+    echo "$ROOT_DIR/assets/AppIcon-1024.png"
+    return 0
+  fi
+
+  if [[ -f "$ROOT_DIR/Sources/Resources/bowtie-54.png" ]]; then
+    echo "$ROOT_DIR/Sources/Resources/bowtie-54.png"
+    return 0
+  fi
+
+  return 1
+}
+
+generate_app_icon() {
+  local source_png="$1"
+  local iconset_dir="$WORK_DIR/AppIcon.iconset"
+  local icon_icns="$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+
+  if ! command -v sips >/dev/null 2>&1 || ! command -v iconutil >/dev/null 2>&1; then
+    echo "sips/iconutil not available; skipping app icon generation."
+    return
+  fi
+
+  rm -rf "$iconset_dir"
+  mkdir -p "$iconset_dir"
+
+  sips -s format png -z 16 16 "$source_png" --out "$iconset_dir/icon_16x16.png" >/dev/null
+  sips -s format png -z 32 32 "$source_png" --out "$iconset_dir/icon_16x16@2x.png" >/dev/null
+  sips -s format png -z 32 32 "$source_png" --out "$iconset_dir/icon_32x32.png" >/dev/null
+  sips -s format png -z 64 64 "$source_png" --out "$iconset_dir/icon_32x32@2x.png" >/dev/null
+  sips -s format png -z 128 128 "$source_png" --out "$iconset_dir/icon_128x128.png" >/dev/null
+  sips -s format png -z 256 256 "$source_png" --out "$iconset_dir/icon_128x128@2x.png" >/dev/null
+  sips -s format png -z 256 256 "$source_png" --out "$iconset_dir/icon_256x256.png" >/dev/null
+  sips -s format png -z 512 512 "$source_png" --out "$iconset_dir/icon_256x256@2x.png" >/dev/null
+  sips -s format png -z 512 512 "$source_png" --out "$iconset_dir/icon_512x512.png" >/dev/null
+  sips -s format png -z 1024 1024 "$source_png" --out "$iconset_dir/icon_512x512@2x.png" >/dev/null
+
+  iconutil -c icns "$iconset_dir" -o "$icon_icns"
+  echo "App icon generated from: $source_png"
+}
+
+if icon_source="$(resolve_app_icon_source)"; then
+  generate_app_icon "$icon_source"
+else
+  echo "No app icon source found; continuing without app icon."
+fi
 
 # SwiftPM resources are emitted as *.bundle directories. Copy them into the app.
 BINARY_DIR="$(cd "$(dirname "$BINARY_PATH")" && pwd)"
@@ -72,6 +126,8 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
   <string>${BUNDLE_ID}</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
   <key>CFBundleName</key>
   <string>${DISPLAY_NAME}</string>
   <key>CFBundlePackageType</key>
