@@ -1,8 +1,11 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/garcon-darkmode.png">
-  <source media="(prefers-color-scheme: light)" srcset="assets/garcon-lightmode.png">
-  <img src="assets/garcon-lightmode.png" alt="Garçon logo" style="width: 300px">
-</picture>
+<div style="margin-bottom: 40px;">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/garcon-darkmode.png">
+    <source media="(prefers-color-scheme: light)" srcset="assets/garcon-lightmode.png">
+    <img src="assets/garcon-lightmode.png" alt="Garçon logo" width="350">
+  </picture>
+</div>
+
 
 <br />
 
