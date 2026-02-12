@@ -224,15 +224,17 @@ fi
 (
   cd "$DIST_DIR"
   xattr -cr "$APP_NAME.app" 2>/dev/null || true
-  rm -f "$APP_NAME.app.zip"
+  rm -f "$APP_NAME.app.zip" "garcon.zip"
   COPYFILE_DISABLE=1 zip -qryX "$APP_NAME.app.zip" "$APP_NAME.app"
+  cp "$APP_NAME.app.zip" "garcon.zip"
   COPYFILE_DISABLE=1 tar -czf "$APP_NAME-macos-$ARCH.tar.gz" "$APP_NAME.app"
-  shasum -a 256 "$APP_NAME.app.zip" "$APP_NAME-macos-$ARCH.tar.gz" > SHA256SUMS.txt
+  shasum -a 256 "garcon.zip" "$APP_NAME.app.zip" "$APP_NAME-macos-$ARCH.tar.gz" > SHA256SUMS.txt
 )
 
 rm -rf "$WORK_DIR"
 
 echo "Artifacts created:"
+echo "  $DIST_DIR/garcon.zip"
 echo "  $DIST_DIR/$APP_NAME.app.zip"
 echo "  $DIST_DIR/$APP_NAME-macos-$ARCH.tar.gz"
 echo "  $DIST_DIR/SHA256SUMS.txt"

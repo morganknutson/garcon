@@ -13,6 +13,7 @@ fi
 VERSION="${TAG#v}"
 ARCH="$(uname -m)"
 APP_ZIP="dist/Garcon.app.zip"
+LATEST_ZIP="dist/garcon.zip"
 APP_TAR="dist/Garcon-macos-$ARCH.tar.gz"
 SUMS_FILE="dist/SHA256SUMS.txt"
 
@@ -43,22 +44,23 @@ cat > "$NOTES_FILE" <<EOF
 
 ### Downloads
 
+- \`garcon.zip\` stable latest-download asset
 - \`Garcon.app.zip\` for direct install on macOS
 - \`Garcon-macos-$ARCH.tar.gz\` alternate archive
 - \`SHA256SUMS.txt\` checksums
 
 ### Install
 
-1. Download \`Garcon.app.zip\`
+1. Download \`garcon.zip\` (or \`Garcon.app.zip\`)
 2. Unzip and move \`Garcon.app\` to \`/Applications\`
 3. Launch Garcon from Applications
 EOF
 
 if gh release view "$TAG" >/dev/null 2>&1; then
-  gh release upload "$TAG" "$APP_ZIP" "$APP_TAR" "$SUMS_FILE" --clobber
+  gh release upload "$TAG" "$LATEST_ZIP" "$APP_ZIP" "$APP_TAR" "$SUMS_FILE" --clobber
   gh release edit "$TAG" --title "Garcon $TAG" --notes-file "$NOTES_FILE"
 else
-  gh release create "$TAG" "$APP_ZIP" "$APP_TAR" "$SUMS_FILE" \
+  gh release create "$TAG" "$LATEST_ZIP" "$APP_ZIP" "$APP_TAR" "$SUMS_FILE" \
     --title "Garcon $TAG" \
     --notes-file "$NOTES_FILE"
 fi

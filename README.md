@@ -38,10 +38,13 @@ A lightweight macOS menu bar app that shows local web servers, their ports, and 
 
 ### From GitHub Releases (Recommended)
 
-1. Open the repo's **Releases** page.
-2. Download `Garcon.app.zip`.
-3. Unzip and move `Garcon.app` to `/Applications`.
-4. Launch `Garcon.app`.
+Use the stable latest-download link:
+
+- [Download latest Garçon (`garcon.zip`)](https://github.com/morganknutson/garcon/releases/latest/download/garcon.zip)
+
+1. Download `garcon.zip`.
+2. Unzip and move `Garcon.app` to `/Applications`.
+3. Launch `Garcon.app`.
 
 ## Usage
 
