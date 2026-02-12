@@ -408,6 +408,7 @@ struct ServerCardView: View {
     let server: LocalServer
     let openServer: (LocalServer) -> Void
     let killServer: (LocalServer) -> Void
+    let onHoverChanged: (Bool) -> Void
     @State private var isHovering = false
 
     var body: some View {
@@ -420,20 +421,10 @@ struct ServerCardView: View {
                             .foregroundStyle(.primary)
                             .lineLimit(1)
 
-                        HStack(spacing: 8) {
-                            Text(server.serverType)
-                                .font(.system(size: 11, weight: .regular, design: .monospaced))
-                                .foregroundStyle(typeBadgeColor)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(typeBadgeColor.opacity(0.18))
-                                .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-
-                            Text(server.urlString)
-                                .font(.system(size: 13, weight: .regular))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
+                        Text(server.urlString)
+                            .font(.system(size: 11, weight: .regular))
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
                     }
                     Spacer(minLength: 0)
                 }
@@ -443,17 +434,30 @@ struct ServerCardView: View {
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Button(action: { killServer(server) }) {
-                Image(systemName: "trash")
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(.white)
-                    .frame(width: 28, height: 28)
+            ZStack(alignment: .trailing) {
+                Text(server.serverType)
+                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .foregroundStyle(typeBadgeColor)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(typeBadgeColor.opacity(0.18))
+                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    .opacity(isHovering ? 0 : 1)
+                    .animation(.easeInOut(duration: 0.12), value: isHovering)
+
+                Button(action: { killServer(server) }) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(.white)
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .opacity(isHovering ? 1 : 0)
+                .allowsHitTesting(isHovering)
+                .animation(.easeInOut(duration: 0.12), value: isHovering)
+                .help("Kill server")
             }
-            .buttonStyle(.plain)
-            .opacity(isHovering ? 1 : 0)
-            .allowsHitTesting(isHovering)
-            .animation(.easeInOut(duration: 0.12), value: isHovering)
-            .help("Kill server")
+            .frame(width: 58, alignment: .trailing)
         }
         .padding(.vertical, 8)
         .padding(.leading, 9)
@@ -465,6 +469,7 @@ struct ServerCardView: View {
             withAnimation(.easeInOut(duration: 0.12)) {
                 isHovering = hovering
             }
+            onHoverChanged(hovering)
         }
     }
 
@@ -501,6 +506,7 @@ struct ServerCardView: View {
 struct GarconPopoverView: View {
     @ObservedObject var store: ServerStore
     let quitAction: () -> Void
+    @State private var hoveredServerID: String?
 
     private static let formatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -524,7 +530,7 @@ struct GarconPopoverView: View {
             header
                 .padding(.leading, 19)
                 .padding(.trailing, 14)
-                .padding(.top, 10)
+                .padding(.top, 11)
                 .padding(.bottom, 10)
 
             Divider()
@@ -541,11 +547,23 @@ struct GarconPopoverView: View {
                                     ServerCardView(
                                         server: server,
                                         openServer: open,
-                                        killServer: store.kill
+                                        killServer: store.kill,
+                                        onHoverChanged: { hovering in
+                                            if hovering {
+                                                hoveredServerID = server.id
+                                            } else if hoveredServerID == server.id {
+                                                hoveredServerID = nil
+                                            }
+                                        }
                                     )
                                     if index < store.primaryServers.count - 1 {
                                         Divider()
-                                            .opacity(0.55)
+                                            .opacity(
+                                                dividerOpacity(
+                                                    between: server.id,
+                                                    and: store.primaryServers[index + 1].id
+                                                )
+                                            )
                                             .padding(.horizontal, 10)
                                     }
                                 }
@@ -563,7 +581,8 @@ struct GarconPopoverView: View {
                             Text("System (\(store.systemServers.count))")
                                 .font(.system(size: 13, weight: .regular))
                                 .foregroundStyle(.secondary)
-                                .padding(.horizontal, 10)
+                                .padding(.top, 6)
+                                .padding(.horizontal, 9)
                                 .padding(.bottom, 4)
 
                             ForEach(Array(store.systemServers.enumerated()), id: \.element.id) { index, server in
@@ -571,11 +590,23 @@ struct GarconPopoverView: View {
                                     ServerCardView(
                                         server: server,
                                         openServer: open,
-                                        killServer: store.kill
+                                        killServer: store.kill,
+                                        onHoverChanged: { hovering in
+                                            if hovering {
+                                                hoveredServerID = server.id
+                                            } else if hoveredServerID == server.id {
+                                                hoveredServerID = nil
+                                            }
+                                        }
                                     )
                                     if index < store.systemServers.count - 1 {
                                         Divider()
-                                            .opacity(0.55)
+                                            .opacity(
+                                                dividerOpacity(
+                                                    between: server.id,
+                                                    and: store.systemServers[index + 1].id
+                                                )
+                                            )
                                             .padding(.horizontal, 10)
                                     }
                                 }
@@ -589,7 +620,7 @@ struct GarconPopoverView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .frame(width: 410, height: 500, alignment: .top)
+        .frame(width: 356, height: 500, alignment: .top)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(.ultraThinMaterial)
@@ -610,28 +641,43 @@ struct GarconPopoverView: View {
             Spacer(minLength: 12)
 
             if let updateStatusText {
-                Text(updateStatusText)
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(.secondary)
+                Button(action: store.refreshServers) {
+                    Text(updateStatusText)
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(.tertiary)
+                        .offset(x: -3)
+                }
+                .buttonStyle(.plain)
+                .disabled(store.isRefreshing)
+                .help("Refresh")
             }
 
             Button(action: store.refreshServers) {
-                Image(systemName: "arrow.clockwise")
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 11, weight: .regular))
+                    .frame(width: 12, height: 12, alignment: .center)
+                    .rotationEffect(.degrees(store.isRefreshing ? 360 : 0))
+                    .animation(
+                        store.isRefreshing
+                            ? .linear(duration: 0.85).repeatForever(autoreverses: false)
+                            : .linear(duration: 0.0),
+                        value: store.isRefreshing
+                    )
+                    .offset(y: 0)
             }
             .buttonStyle(.plain)
             .disabled(store.isRefreshing)
-            .font(.system(size: 12, weight: .regular))
             .help("Refresh")
             .padding(.trailing, 6)
 
             Menu {
                 Button("Quit Garçon!", role: .destructive, action: quitAction)
             } label: {
-                Image(systemName: "gearshape")
-                .font(.system(size: 13, weight: .regular))
-                .padding(.leading, 4)
-                .padding(.trailing, 0)
+                Image(nsImage: settingsSymbolImage())
+                    .padding(.leading, 4)
+                    .padding(.trailing, 0)
             }
+            .padding(.top, -1)
             .menuIndicator(.hidden)
             .menuStyle(.borderlessButton)
             .help("Settings")
@@ -643,6 +689,28 @@ struct GarconPopoverView: View {
             return
         }
         NSWorkspace.shared.open(url)
+    }
+
+    private func settingsSymbolImage() -> NSImage {
+        let base = NSImage(
+            systemSymbolName: "gearshape",
+            accessibilityDescription: "Settings"
+        ) ?? NSImage(size: NSSize(width: 10, height: 10))
+
+        if let configured = base.withSymbolConfiguration(
+            NSImage.SymbolConfiguration(pointSize: 12, weight: .regular)
+        ) {
+            return configured
+        }
+
+        return base
+    }
+
+    private func dividerOpacity(between firstID: String, and secondID: String) -> Double {
+        if hoveredServerID == firstID || hoveredServerID == secondID {
+            return 0
+        }
+        return 0.55
     }
 }
 
@@ -684,7 +752,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let hostingController = NSHostingController(rootView: rootView)
         let panel = GarconPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 410, height: 500),
+            contentRect: NSRect(x: 0, y: 0, width: 356, height: 500),
             styleMask: [.nonactivatingPanel, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -758,8 +826,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let buttonFrameInScreen = buttonWindow.convertToScreen(button.frame)
         let x = buttonFrameInScreen.maxX - panel.frame.width
-        let y = buttonFrameInScreen.minY - panel.frame.height + 2
-        panel.setContentSize(NSSize(width: 410, height: 500))
+        let y = buttonFrameInScreen.minY - panel.frame.height
+        panel.setContentSize(NSSize(width: 356, height: 500))
         panel.setFrameOrigin(NSPoint(x: x, y: y))
         panel.makeKeyAndOrderFront(nil)
 
