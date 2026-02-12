@@ -2,7 +2,7 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/garcon-darkmode.png">
     <source media="(prefers-color-scheme: light)" srcset="assets/garcon-lightmode.png">
-    <img src="assets/garcon-lightmode.png" alt="Garçon logo" width="446">
+    <img src="assets/garcon-lightmode.png" alt="Garçon logo">
   </picture>
 </p>
 
