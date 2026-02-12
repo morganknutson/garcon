@@ -6,10 +6,18 @@
   </picture>
 </div>
 
-
 <br />
 
 A lightweight macOS menu bar app that shows local web servers, their ports, and quick actions to open or stop them. Garçon!
+
+<br />
+
+
+[![Download for macOS](https://img.shields.io/badge/Download%20for%20macOS-black?style=for-the-badge&logo=apple)](https://github.com/OWNER/REPO/releases/latest/download/garcon.zip)
+
+
+<br />
+
 
 ## What It Does
 
@@ -20,7 +28,7 @@ A lightweight macOS menu bar app that shows local web servers, their ports, and 
 - Lets you stop a server with a hover-revealed trash action.
 - Caches the last server list so the panel appears immediately.
 
-![Garçon menu bar panel screenshot](assets/garcon-what-it-does.png)
+<img src="assets/garcon-what-it-does.png" alt="Garçon menu bar panel screenshot" width="400">
 
 ## Requirements
 
