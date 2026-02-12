@@ -20,6 +20,8 @@ A lightweight macOS menu bar app that shows local web servers, their ports, and 
 - Lets you stop a server with a hover-revealed trash action.
 - Caches the last server list so the panel appears immediately.
 
+![Garçon menu bar panel screenshot](assets/garcon-what-it-does.png)
+
 ## Requirements
 
 - macOS `13+` (Ventura or newer).

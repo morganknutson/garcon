@@ -323,7 +323,10 @@ final class ServerScanner {
             ("&gt;", ">"),
             ("&quot;", "\""),
             ("&#39;", "'"),
-            ("&nbsp;", " ")
+            ("&nbsp;", " "),
+            ("&mdash;", "—"),
+            ("&#8212;", "—"),
+            ("&#x2014;", "—")
         ]
 
         for (entity, replacement) in replacements {
