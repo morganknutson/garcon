@@ -12,9 +12,11 @@ A lightweight macOS menu bar app that shows local web servers, their ports, and 
 
 <br />
 
-
-[![Download for macOS](https://img.shields.io/badge/Download%20for%20macOS-black?style=for-the-badge&logo=apple)](https://github.com/morganknutson/garcon/releases/latest/download/garcon.zip)
-
+<p align="left">
+  <a href="[https://github.com/OWNER/REPO/releases/latest/download/garcon.zip](https://github.com/morganknutson/garcon/releases/latest/download/garcon.zip)">
+    <img src="assets/button.png" width="220">
+  </a>
+</p>
 
 
 <br />
