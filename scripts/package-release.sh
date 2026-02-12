@@ -11,6 +11,9 @@ BUNDLE_ID="com.morganknutson.garcon"
 DIST_DIR="$ROOT_DIR/dist"
 WORK_DIR="$DIST_DIR/.work"
 ARCH="$(uname -m)"
+SKIP_SIGNING="${SKIP_SIGNING:-0}"
+SIGN_IDENTITY="${SIGN_IDENTITY:-}"
+NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 
 echo "Building $APP_NAME $VERSION for macOS ($ARCH)..."
 
@@ -88,6 +91,79 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
 PLIST
 
 cp -R "$APP_BUNDLE" "$DIST_DIR/$APP_NAME.app"
+DIST_APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
+
+resolve_sign_identity() {
+  if [[ "$SKIP_SIGNING" == "1" ]]; then
+    return 1
+  fi
+
+  if [[ -n "$SIGN_IDENTITY" ]]; then
+    echo "$SIGN_IDENTITY"
+    return 0
+  fi
+
+  local detected
+  detected="$(
+    security find-identity -v -p codesigning 2>/dev/null \
+      | awk -F\" '/Developer ID Application:/{print $2; exit}'
+  )"
+
+  if [[ -z "$detected" ]]; then
+    return 1
+  fi
+
+  echo "$detected"
+}
+
+sign_app_bundle() {
+  local identity="$1"
+  echo "Signing app with: $identity"
+
+  xattr -cr "$DIST_APP_BUNDLE" 2>/dev/null || true
+
+  codesign --force --timestamp --options runtime --sign "$identity" "$DIST_APP_BUNDLE/Contents/MacOS/$APP_NAME"
+  codesign --force --deep --timestamp --options runtime --sign "$identity" "$DIST_APP_BUNDLE"
+
+  codesign --verify --deep --strict --verbose=2 "$DIST_APP_BUNDLE"
+  spctl --assess --type execute -v "$DIST_APP_BUNDLE" || true
+}
+
+notarize_and_staple() {
+  local profile="$1"
+  local notary_zip="$DIST_DIR/$APP_NAME-notary.zip"
+
+  if ! command -v xcrun >/dev/null 2>&1; then
+    echo "xcrun not found; cannot notarize." >&2
+    exit 1
+  fi
+
+  if ! xcrun notarytool help >/dev/null 2>&1; then
+    echo "notarytool unavailable; install/update Xcode Command Line Tools." >&2
+    exit 1
+  fi
+
+  echo "Submitting app for notarization with profile: $profile"
+  (
+    cd "$DIST_DIR"
+    rm -f "$APP_NAME.app.zip" "$notary_zip"
+    COPYFILE_DISABLE=1 zip -qryX "$notary_zip" "$APP_NAME.app"
+  )
+
+  xcrun notarytool submit "$notary_zip" --keychain-profile "$profile" --wait
+  xcrun stapler staple "$DIST_APP_BUNDLE"
+  rm -f "$notary_zip"
+}
+
+if identity="$(resolve_sign_identity)"; then
+  sign_app_bundle "$identity"
+else
+  echo "No Developer ID Application identity detected. Building unsigned app."
+fi
+
+if [[ -n "$NOTARY_PROFILE" ]]; then
+  notarize_and_staple "$NOTARY_PROFILE"
+fi
 
 (
   cd "$DIST_DIR"
