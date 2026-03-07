@@ -11,7 +11,7 @@ if [[ "$TAG" != v* ]]; then
 fi
 
 VERSION="${TAG#v}"
-ARCH="$(uname -m)"
+ARCH="universal"
 APP_ZIP="dist/Garcon.app.zip"
 LATEST_ZIP="dist/garcon.zip"
 APP_TAR="dist/Garcon-macos-$ARCH.tar.gz"

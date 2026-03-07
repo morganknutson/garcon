@@ -10,7 +10,7 @@ DISPLAY_NAME="Garcon"
 BUNDLE_ID="com.morganknutson.garcon"
 DIST_DIR="$ROOT_DIR/dist"
 WORK_DIR="$DIST_DIR/.work"
-ARCH="$(uname -m)"
+ARCH="universal"
 SKIP_SIGNING="${SKIP_SIGNING:-0}"
 SIGN_IDENTITY="${SIGN_IDENTITY:-}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
@@ -21,10 +21,12 @@ echo "Building $APP_NAME $VERSION for macOS ($ARCH)..."
 rm -rf "$DIST_DIR"
 mkdir -p "$WORK_DIR"
 
-swift build -c release --product "$APP_NAME"
+swift build -c release --product "$APP_NAME" --arch arm64 --arch x86_64
 
 BINARY_PATH=""
-if [[ -x ".build/release/$APP_NAME" ]]; then
+if [[ -x ".build/apple/Products/Release/$APP_NAME" ]]; then
+  BINARY_PATH=".build/apple/Products/Release/$APP_NAME"
+elif [[ -x ".build/release/$APP_NAME" ]]; then
   BINARY_PATH=".build/release/$APP_NAME"
 else
   CANDIDATE="$(find .build -type f -path "*/release/$APP_NAME" | head -n 1 || true)"
