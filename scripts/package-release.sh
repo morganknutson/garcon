@@ -188,7 +188,6 @@ fi
 if [[ -n "$RESOURCE_BUNDLES" ]]; then
   while IFS= read -r bundle_path; do
     [[ -n "$bundle_path" ]] || continue
-    cp -R "$bundle_path" "$APP_BUNDLE/"
     cp -R "$bundle_path" "$APP_BUNDLE/Contents/Resources/"
   done <<< "$RESOURCE_BUNDLES"
 fi
