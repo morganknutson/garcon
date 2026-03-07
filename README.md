@@ -13,7 +13,7 @@ A lightweight macOS menu bar app that shows local web servers, their ports, and 
 <br />
 
 
-[![Download for macOS](https://raw.githubusercontent.com/morganknutson/garcon/main/assets/dl-button.png)](https://github.com/morganknutson/garcon/releases/latest/download/garcon.zip)
+<a href="https://github.com/morganknutson/garcon/releases/latest/download/garcon.zip"><img src="https://raw.githubusercontent.com/morganknutson/garcon/main/assets/dl-button.png" alt="Download for macOS" width="180"></a>
 
 
 <br />
