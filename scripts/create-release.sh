@@ -11,10 +11,8 @@ if [[ "$TAG" != v* ]]; then
 fi
 
 VERSION="${TAG#v}"
-ARCH="universal"
 APP_ZIP="dist/Garcon.app.zip"
 LATEST_ZIP="dist/garcon.zip"
-APP_TAR="dist/Garcon-macos-$ARCH.tar.gz"
 SUMS_FILE="dist/SHA256SUMS.txt"
 
 if ! command -v gh >/dev/null 2>&1; then
@@ -28,6 +26,13 @@ if ! gh auth status >/dev/null 2>&1; then
 fi
 
 "$ROOT_DIR/scripts/package-release.sh" "$VERSION"
+
+APP_TAR="$(find dist -maxdepth 1 -type f -name 'Garcon-macos-*.tar.gz' | head -n 1 || true)"
+if [[ -z "$APP_TAR" || ! -f "$APP_TAR" ]]; then
+  echo "Could not locate packaged tar artifact in dist/." >&2
+  exit 1
+fi
+APP_TAR_BASENAME="$(basename "$APP_TAR")"
 
 if ! git rev-parse "$TAG" >/dev/null 2>&1; then
   git tag -a "$TAG" -m "Release $TAG"
@@ -46,7 +51,7 @@ cat > "$NOTES_FILE" <<EOF
 
 - \`garcon.zip\` stable latest-download asset
 - \`Garcon.app.zip\` for direct install on macOS
-- \`Garcon-macos-$ARCH.tar.gz\` alternate archive
+- \`$APP_TAR_BASENAME\` alternate archive
 - \`SHA256SUMS.txt\` checksums
 
 ### Install

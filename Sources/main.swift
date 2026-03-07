@@ -15,6 +15,7 @@ struct LocalServer: Hashable, Codable, Identifiable {
     let scheme: String
     let pageTitle: String?
     let executablePath: String?
+    let isUserLaunched: Bool?
 
     var id: String {
         "\(pid)-\(port)-\(scheme)"
@@ -47,11 +48,69 @@ struct LocalServer: Hashable, Codable, Identifiable {
             lower.contains("figma")
     }
 
-    var serverType: String {
-        let lower = processName.lowercased()
-        let tokens = lower
+    var isUserLaunchedProcess: Bool {
+        isUserLaunched ?? false
+    }
+
+    var isLikelyAppHelperProcess: Bool {
+        let combined = "\(processName) \(pageTitle ?? "") \(executablePath ?? "")".lowercased()
+        let helperLike = combined.contains("helper") ||
+            combined.contains("plugin") ||
+            combined.contains("extension")
+        guard helperLike else {
+            return false
+        }
+
+        let runtimeLike = combined.contains("node") ||
+            combined.contains("python") ||
+            combined.contains("ruby") ||
+            combined.contains("java") ||
+            combined.contains("deno") ||
+            combined.contains("bun")
+        return !runtimeLike
+    }
+
+    private var processTokens: [String] {
+        let combined = "\(processName) \(executablePath ?? "")".lowercased()
+        return combined
             .split { !$0.isLetter && !$0.isNumber }
             .map(String.init)
+    }
+
+    var isLikelyDeveloperProcess: Bool {
+        let developerTokens: Set<String> = [
+            "node", "python", "ruby", "php", "java", "bun", "deno", "go", "rust", "dotnet",
+            "uvicorn", "gunicorn", "flask", "django", "rails", "puma", "unicorn", "sinatra",
+            "vite", "webpack", "next", "nuxt", "astro", "remix", "parcel", "serve", "httpserver",
+            "cargo", "mix", "phoenix", "caddy", "nginx", "apache", "httpd"
+        ]
+        let tokenSet = Set(processTokens)
+        return !tokenSet.isDisjoint(with: developerTokens)
+    }
+
+    var appearsInPrimaryList: Bool {
+        if isSystemProcess {
+            return false
+        }
+        let lowerDisplay = displayTitle.lowercased()
+        if lowerDisplay.contains("helper") ||
+            lowerDisplay.contains("plugin") ||
+            lowerDisplay.contains("extension")
+        {
+            return false
+        }
+        if isLikelyAppHelperProcess {
+            return false
+        }
+        if isUserLaunchedProcess {
+            return true
+        }
+        return isLikelyDeveloperProcess
+    }
+
+    var serverType: String {
+        let lower = processName.lowercased()
+        let tokens = processTokens
 
         if tokens.contains("node") { return "node" }
         if tokens.contains("python") { return "python" }
@@ -107,6 +166,7 @@ final class Shell {
             try process.run()
             process.waitUntilExit()
         } catch {
+            Log.error("Shell.run failed: \(launchPath) \(arguments.joined(separator: " ")) — \(error)")
             return (1, "", "\(error)")
         }
 
@@ -128,8 +188,15 @@ final class ServerScanner {
         let pageTitle: String?
     }
 
+    private struct ProcessSnapshot {
+        let ppid: Int
+        let command: String?
+    }
+
     func findWebServers() -> [LocalServer] {
+        Log.debug("Scanning for web servers…")
         let listeners = listeningSockets()
+        Log.debug("Found \(listeners.count) listening socket(s)")
         guard !listeners.isEmpty else {
             return []
         }
@@ -159,7 +226,8 @@ final class ServerScanner {
                     port: socket.port,
                     scheme: probe.scheme,
                     pageTitle: probe.pageTitle,
-                    executablePath: socket.executablePath
+                    executablePath: socket.executablePath,
+                    isUserLaunched: socket.isUserLaunched
                 )
 
                 lock.lock()
@@ -170,7 +238,11 @@ final class ServerScanner {
 
         group.wait()
 
+        Log.info("Scan complete — \(servers.count) web server(s) found")
         return servers.sorted { lhs, rhs in
+            if lhs.appearsInPrimaryList != rhs.appearsInPrimaryList {
+                return lhs.appearsInPrimaryList && !rhs.appearsInPrimaryList
+            }
             if lhs.isSystemProcess != rhs.isSystemProcess {
                 return !lhs.isSystemProcess && rhs.isSystemProcess
             }
@@ -181,21 +253,23 @@ final class ServerScanner {
         }
     }
 
-    private func listeningSockets() -> [(pid: Int, processName: String, port: Int, executablePath: String?)] {
+    private func listeningSockets() -> [(pid: Int, processName: String, port: Int, executablePath: String?, isUserLaunched: Bool)] {
         let result = Shell.run(
             "/usr/sbin/lsof",
             ["-nP", "-iTCP", "-sTCP:LISTEN", "-Fpcn"]
         )
 
         guard result.status == 0 else {
+            Log.error("lsof failed — status=\(result.status) stderr=\(result.stderr.prefix(500))")
             return []
         }
 
-        var sockets: [(Int, String, Int, String?)] = []
+        var sockets: [(Int, String, Int, String?, Bool)] = []
         var currentPID: Int?
         var currentCommand = ""
         var dedupe = Set<String>()
-        var pathCache = [Int: String?]()
+        var processInfoCache = [Int: (path: String?, isUserLaunched: Bool)]()
+        var processSnapshotCache = [Int: ProcessSnapshot?]()
 
         for rawLine in result.stdout.split(separator: "\n", omittingEmptySubsequences: true) {
             let line = String(rawLine)
@@ -218,10 +292,16 @@ final class ServerScanner {
                     continue
                 }
                 dedupe.insert(key)
-                if pathCache[pid] == nil {
-                    pathCache[pid] = processExecutablePath(pid: pid)
+                if processInfoCache[pid] == nil {
+                    let snapshot = processSnapshot(pid: pid, cache: &processSnapshotCache)
+                    processInfoCache[pid] = (
+                        path: snapshot?.command,
+                        isUserLaunched: isUserLaunchedProcess(pid: pid, cache: &processSnapshotCache)
+                    )
                 }
-                sockets.append((pid, currentCommand, port, pathCache[pid] ?? nil))
+                if let processInfo = processInfoCache[pid] {
+                    sockets.append((pid, currentCommand, port, processInfo.path, processInfo.isUserLaunched))
+                }
             default:
                 continue
             }
@@ -230,13 +310,66 @@ final class ServerScanner {
         return sockets
     }
 
-    private func processExecutablePath(pid: Int) -> String? {
-        let result = Shell.run("/bin/ps", ["-p", "\(pid)", "-o", "comm="])
+    private func processSnapshot(pid: Int, cache: inout [Int: ProcessSnapshot?]) -> ProcessSnapshot? {
+        if let cached = cache[pid] {
+            return cached
+        }
+
+        let result = Shell.run("/bin/ps", ["-ww", "-p", "\(pid)", "-o", "ppid=", "-o", "command="])
         guard result.status == 0 else {
+            cache[pid] = nil
             return nil
         }
-        let value = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty ? nil : value
+
+        guard let firstLine = result.stdout
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .first
+        else {
+            cache[pid] = nil
+            return nil
+        }
+
+        let trimmed = String(firstLine).trimmingCharacters(in: .whitespacesAndNewlines)
+        let ppidPrefix = trimmed.prefix(while: { $0.isNumber })
+        guard let ppid = Int(ppidPrefix) else {
+            cache[pid] = nil
+            return nil
+        }
+
+        let commandStart = trimmed.index(trimmed.startIndex, offsetBy: ppidPrefix.count)
+        let command = trimmed[commandStart...].trimmingCharacters(in: .whitespacesAndNewlines)
+        let snapshot = ProcessSnapshot(
+            ppid: ppid,
+            command: command.isEmpty ? nil : command
+        )
+        cache[pid] = snapshot
+        return snapshot
+    }
+
+    private func isUserLaunchedProcess(pid: Int, cache: inout [Int: ProcessSnapshot?]) -> Bool {
+        var currentPID = pid
+        var depth = 0
+        var visited = Set<Int>()
+
+        while depth < 12, currentPID > 1, !visited.contains(currentPID) {
+            visited.insert(currentPID)
+            guard let snapshot = processSnapshot(pid: currentPID, cache: &cache) else {
+                return false
+            }
+
+            if let command = snapshot.command, ProcessClassifier.isTrustedAncestorCommand(command) {
+                return true
+            }
+
+            if snapshot.ppid <= 1 {
+                break
+            }
+
+            currentPID = snapshot.ppid
+            depth += 1
+        }
+
+        return false
     }
 
     private func extractPort(from raw: String) -> Int? {
@@ -346,24 +479,27 @@ final class ServerStore: ObservableObject {
     private let cacheKey = "garcon.cachedServers.v1"
 
     var primaryServers: [LocalServer] {
-        servers.filter { !$0.isSystemProcess }
+        servers.filter(\.appearsInPrimaryList)
     }
 
     var systemServers: [LocalServer] {
-        servers.filter(\.isSystemProcess)
+        servers.filter { !$0.appearsInPrimaryList }
     }
 
     init() {
+        Log.info("ServerStore.init — loading cache and starting first refresh")
         loadCachedServers()
         refreshServers()
     }
 
     func refreshServers() {
         guard !isRefreshing else {
+            Log.debug("Refresh skipped — already in progress")
             return
         }
 
         isRefreshing = true
+        Log.debug("Refresh started")
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             let latest = self.scanner.findWebServers()
@@ -374,6 +510,7 @@ final class ServerStore: ObservableObject {
                 self.lastRefreshDate = Date()
                 self.saveCachedServers()
                 self.isRefreshing = false
+                Log.info("Refresh complete — \(latest.count) server(s), \(self.primaryServers.count) primary")
             }
         }
     }
@@ -721,20 +858,46 @@ struct EmptyStateRow: View {
     let text: String
 
     var body: some View {
-        Text(text)
-            .font(.system(size: 13, weight: .regular))
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 10)
+        VStack(spacing: 12) {
+            if let image = emptyStateImage() {
+                Image(nsImage: image)
+                    .resizable()
+                    .renderingMode(.template)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 22, height: 22)
+                    .foregroundStyle(.secondary.opacity(0.65))
+            }
+
+            Text(text)
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+            .frame(maxWidth: .infinity, minHeight: 132, maxHeight: 132, alignment: .center)
             .padding(.horizontal, 14)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color(nsColor: NSColor(calibratedWhite: 1.0, alpha: 0.08)))
+                    .fill(Color.white.opacity(0.02))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    .stroke(Color.white.opacity(0.035), lineWidth: 1)
             )
+    }
+
+    private func emptyStateImage() -> NSImage? {
+        let candidates = ["bowtie-54", "bowtie-36"]
+        for name in candidates {
+            guard
+                let url = ResourceBundle.url(forResource: name, withExtension: "png"),
+                let image = NSImage(contentsOf: url)
+            else {
+                continue
+            }
+            image.isTemplate = true
+            return image
+        }
+        return nil
     }
 }
 
@@ -744,8 +907,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store = ServerStore()
     private var outsideClickMonitor: Any?
     private var localClickMonitor: Any?
+    private let activePillLayer = CAShapeLayer()
+    /// Horizontal padding added to the status item beyond the icon, to make room for the pill.
+    private let activePillPadding: CGFloat = 8
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Log.info("applicationDidFinishLaunching")
         NSApplication.shared.setActivationPolicy(.accessory)
 
         let rootView = GarconPopoverView(
@@ -772,12 +939,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.panel = panel
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        Log.info("Status item created: \(statusItem != nil ? "ok" : "FAILED")")
         if let button = statusItem?.button {
-            button.image = makeStatusItemImage()
+            let icon = makeStatusItemImage()
+            // Pad the image so the status item is wide enough for the pill behind it.
+            let paddedSize = NSSize(width: icon.size.width + activePillPadding, height: icon.size.height)
+            let paddedImage = NSImage(size: paddedSize)
+            paddedImage.lockFocus()
+            icon.draw(
+                in: NSRect(x: activePillPadding / 2, y: 0, width: icon.size.width, height: icon.size.height),
+                from: .zero,
+                operation: .sourceOver,
+                fraction: 1
+            )
+            paddedImage.unlockFocus()
+            paddedImage.isTemplate = true
+            button.image = paddedImage
             button.toolTip = "Garçon!"
             button.target = self
             button.action = #selector(togglePopover(_:))
-            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+            button.sendAction(on: [.leftMouseDown, .rightMouseDown])
+            configureStatusItemButtonAppearance(button)
         }
     }
 
@@ -788,7 +970,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         for assetName in assetNames {
             guard
-                let url = Bundle.module.url(forResource: assetName, withExtension: "png"),
+                let url = ResourceBundle.url(forResource: assetName, withExtension: "png"),
                 let sourceImage = NSImage(contentsOf: url)
             else {
                 continue
@@ -818,9 +1000,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        if panel.isVisible {
+        switch StatusItemTogglePolicy.action(panelIsVisible: panel.isVisible) {
+        case .closePanel:
             closePanel()
             return
+        case .openPanel:
+            break
         }
 
         guard let buttonWindow = button.window else {
@@ -832,6 +1017,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let y = buttonFrameInScreen.minY - panel.frame.height
         panel.setContentSize(NSSize(width: 356, height: 500))
         panel.setFrameOrigin(NSPoint(x: x, y: y))
+        setStatusItemActive(true)
         panel.makeKeyAndOrderFront(nil)
 
         outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
@@ -846,6 +1032,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, let panel = self.panel else {
                 return event
             }
+
+            if
+                let statusButton = self.statusItem?.button,
+                let statusWindow = statusButton.window,
+                let eventWindow = event.window,
+                eventWindow == statusWindow
+            {
+                let pointInButton = statusButton.convert(event.locationInWindow, from: nil)
+                if statusButton.bounds.contains(pointInButton) {
+                    return event
+                }
+            }
+
             if let eventWindow = event.window, eventWindow == panel {
                 return event
             }
@@ -856,6 +1055,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func closePanel() {
         panel?.orderOut(nil)
+        setStatusItemActive(false)
         if let outsideClickMonitor {
             NSEvent.removeMonitor(outsideClickMonitor)
             self.outsideClickMonitor = nil
@@ -865,9 +1065,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.localClickMonitor = nil
         }
     }
+
+    private func setStatusItemActive(_ isActive: Bool) {
+        guard let button = statusItem?.button else {
+            return
+        }
+        updateActivePillFrame(for: button)
+        activePillLayer.isHidden = !isActive
+        button.cell?.isHighlighted = false
+    }
+
+    private func configureStatusItemButtonAppearance(_ button: NSStatusBarButton) {
+        if let cell = button.cell as? NSButtonCell {
+            cell.highlightsBy = []
+            cell.showsStateBy = []
+        }
+        button.wantsLayer = true
+        button.layer?.masksToBounds = false
+
+        activePillLayer.fillColor = NSColor.labelColor.withAlphaComponent(0.14).cgColor
+        activePillLayer.isHidden = true
+        if activePillLayer.superlayer !== button.layer {
+            activePillLayer.removeFromSuperlayer()
+            button.layer?.insertSublayer(activePillLayer, at: 0)
+        }
+        updateActivePillFrame(for: button)
+
+        button.cell?.isHighlighted = false
+        button.needsDisplay = true
+    }
+
+    private func updateActivePillFrame(for button: NSStatusBarButton) {
+        // 3pt taller than button, small horizontal inset for breathing room.
+        let pillRect = button.bounds.insetBy(dx: 3, dy: -1.5)
+        let radius = min(11, pillRect.height / 2)
+        activePillLayer.path = CGPath(
+            roundedRect: pillRect,
+            cornerWidth: radius,
+            cornerHeight: radius,
+            transform: nil
+        )
+    }
 }
+
+Log.info("Garcon starting — pid=\(ProcessInfo.processInfo.processIdentifier) arch=\(machArchitecture()) macOS=\(ProcessInfo.processInfo.operatingSystemVersionString)")
 
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate
-app.run()
+
+// NSApplication.delegate is weak — withExtendedLifetime guarantees the delegate
+// is not released by the optimizer before the run loop starts.
+withExtendedLifetime(delegate) {
+    app.run()
+}
+
+private func machArchitecture() -> String {
+    #if arch(arm64)
+    return "arm64"
+    #elseif arch(x86_64)
+    return "x86_64"
+    #else
+    return "unknown"
+    #endif
+}

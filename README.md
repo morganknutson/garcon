@@ -12,11 +12,8 @@ A lightweight macOS menu bar app that shows local web servers, their ports, and 
 
 <br />
 
-<p align="left">
-  <a href="https://github.com/morganknutson/garcon/releases/latest/download/garcon.zip">
-    <img src="assets/button.png" width="220">
-  </a>
-</p>
+
+[![Download for macOS](https://img.shields.io/badge/Download%20for%20macOS-black?style=for-the-badge&logo=apple)](https://github.com/OWNER/REPO/releases/latest/download/garcon.zip)
 
 
 <br />
@@ -36,6 +33,7 @@ A lightweight macOS menu bar app that shows local web servers, their ports, and 
 ## Requirements
 
 - macOS `13+` (Ventura or newer).
+- Apple Silicon (`arm64`) and Intel (`x86_64`) are both supported in release builds.
 
 ## Install
 

@@ -10,28 +10,103 @@ DISPLAY_NAME="Garcon"
 BUNDLE_ID="com.morganknutson.garcon"
 DIST_DIR="$ROOT_DIR/dist"
 WORK_DIR="$DIST_DIR/.work"
-ARCH="universal"
+ARCH="$(uname -m)"
 SKIP_SIGNING="${SKIP_SIGNING:-0}"
 SIGN_IDENTITY="${SIGN_IDENTITY:-}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 APP_ICON_SOURCE="${APP_ICON_SOURCE:-}"
+UNIVERSAL_BUILD="${UNIVERSAL_BUILD:-1}"
+MACOS_DEPLOYMENT_TARGET="${MACOS_DEPLOYMENT_TARGET:-13.0}"
 
-echo "Building $APP_NAME $VERSION for macOS ($ARCH)..."
+echo "Building $APP_NAME $VERSION for macOS (host: $ARCH)..."
 
 rm -rf "$DIST_DIR"
 mkdir -p "$WORK_DIR"
 
-swift build -c release --product "$APP_NAME" --arch arm64 --arch x86_64
+resolve_release_binary_for_arch() {
+  local arch="$1"
+  local candidate=""
+
+  candidate="$(find .build -type f -path "*/$arch-apple-macosx*/release/$APP_NAME" | head -n 1 || true)"
+  if [[ -n "$candidate" && -x "$candidate" ]]; then
+    echo "$candidate"
+    return 0
+  fi
+
+  candidate="$(find .build -type f -path "*/release/$APP_NAME" | grep "/$arch-apple-macosx" | head -n 1 || true)"
+  if [[ -n "$candidate" && -x "$candidate" ]]; then
+    echo "$candidate"
+    return 0
+  fi
+
+  return 1
+}
+
+resolve_release_binary() {
+  if [[ -x ".build/release/$APP_NAME" ]]; then
+    echo ".build/release/$APP_NAME"
+    return 0
+  fi
+
+  local candidate=""
+  candidate="$(find .build -type f -path "*/release/$APP_NAME" | head -n 1 || true)"
+  if [[ -n "$candidate" && -x "$candidate" ]]; then
+    echo "$candidate"
+    return 0
+  fi
+
+  return 1
+}
+
+build_for_arch() {
+  local target_arch="$1"
+  local target_triple="$target_arch-apple-macosx$MACOS_DEPLOYMENT_TARGET"
+  echo "Building release binary for $target_arch ($target_triple)..."
+  swift build -c release --triple "$target_triple" --product "$APP_NAME"
+}
+
+declare -a BUILT_ARCHES=()
+declare -a BUILT_BINARIES=()
+
+if [[ "$UNIVERSAL_BUILD" == "1" ]] && swift build --help 2>/dev/null | grep -q -- '--triple'; then
+  for target_arch in arm64 x86_64; do
+    if build_for_arch "$target_arch"; then
+      if binary_path="$(resolve_release_binary_for_arch "$target_arch")"; then
+        BUILT_ARCHES+=("$target_arch")
+        BUILT_BINARIES+=("$binary_path")
+      else
+        echo "Warning: build succeeded for $target_arch but binary was not found." >&2
+      fi
+    else
+      echo "Warning: failed to build $target_arch binary; continuing." >&2
+    fi
+  done
+fi
 
 BINARY_PATH=""
-if [[ -x ".build/apple/Products/Release/$APP_NAME" ]]; then
-  BINARY_PATH=".build/apple/Products/Release/$APP_NAME"
-elif [[ -x ".build/release/$APP_NAME" ]]; then
-  BINARY_PATH=".build/release/$APP_NAME"
+if [[ ${#BUILT_BINARIES[@]} -ge 2 ]]; then
+  BINARY_PATH="$WORK_DIR/$APP_NAME-universal"
+  if ! command -v lipo >/dev/null 2>&1; then
+    echo "lipo is required for universal build output." >&2
+    exit 1
+  fi
+  lipo -create "${BUILT_BINARIES[@]}" -output "$BINARY_PATH"
+  chmod +x "$BINARY_PATH"
+  echo "Created universal binary: $BINARY_PATH"
+elif [[ ${#BUILT_BINARIES[@]} -eq 1 ]]; then
+  BINARY_PATH="${BUILT_BINARIES[0]}"
 else
-  CANDIDATE="$(find .build -type f -path "*/release/$APP_NAME" | head -n 1 || true)"
-  if [[ -n "$CANDIDATE" && -x "$CANDIDATE" ]]; then
-    BINARY_PATH="$CANDIDATE"
+  echo "Falling back to host-architecture release build..."
+  if swift build --help 2>/dev/null | grep -q -- '--triple'; then
+    build_for_arch "$ARCH"
+  else
+    swift build -c release --product "$APP_NAME"
+  fi
+  if BINARY_PATH="$(resolve_release_binary)"; then
+    BUILT_ARCHES=("$ARCH")
+    BUILT_BINARIES=("$BINARY_PATH")
+  else
+    BINARY_PATH=""
   fi
 fi
 
@@ -100,6 +175,10 @@ else
 fi
 
 # SwiftPM resources are emitted as *.bundle directories. Copy them into the app.
+# The auto-generated resource_bundle_accessor.swift resolves Bundle.module via:
+#   Bundle.main.bundleURL.appendingPathComponent("<Name>.bundle")
+# Inside a .app bundle, Bundle.main.bundleURL is the .app root (NOT Contents/Resources/).
+# We must place the resource bundle at the .app root so the accessor finds it.
 BINARY_DIR="$(cd "$(dirname "$BINARY_PATH")" && pwd)"
 RESOURCE_BUNDLES="$(find "$BINARY_DIR" -maxdepth 1 -type d -name '*.bundle' | sort || true)"
 if [[ -z "$RESOURCE_BUNDLES" ]]; then
@@ -109,6 +188,7 @@ fi
 if [[ -n "$RESOURCE_BUNDLES" ]]; then
   while IFS= read -r bundle_path; do
     [[ -n "$bundle_path" ]] || continue
+    cp -R "$bundle_path" "$APP_BUNDLE/"
     cp -R "$bundle_path" "$APP_BUNDLE/Contents/Resources/"
   done <<< "$RESOURCE_BUNDLES"
 fi
@@ -226,17 +306,31 @@ fi
 (
   cd "$DIST_DIR"
   xattr -cr "$APP_NAME.app" 2>/dev/null || true
+  ARCHIVE_ARCH="$ARCH"
+  if [[ ${#BUILT_ARCHES[@]} -ge 2 ]]; then
+    ARCHIVE_ARCH="universal"
+  elif [[ ${#BUILT_ARCHES[@]} -eq 1 ]]; then
+    ARCHIVE_ARCH="${BUILT_ARCHES[0]}"
+  fi
   rm -f "$APP_NAME.app.zip" "garcon.zip"
   COPYFILE_DISABLE=1 zip -qryX "$APP_NAME.app.zip" "$APP_NAME.app"
   cp "$APP_NAME.app.zip" "garcon.zip"
-  COPYFILE_DISABLE=1 tar -czf "$APP_NAME-macos-$ARCH.tar.gz" "$APP_NAME.app"
-  shasum -a 256 "garcon.zip" "$APP_NAME.app.zip" "$APP_NAME-macos-$ARCH.tar.gz" > SHA256SUMS.txt
+  rm -f "$APP_NAME-macos-"*.tar.gz
+  COPYFILE_DISABLE=1 tar -czf "$APP_NAME-macos-$ARCHIVE_ARCH.tar.gz" "$APP_NAME.app"
+  shasum -a 256 "garcon.zip" "$APP_NAME.app.zip" "$APP_NAME-macos-$ARCHIVE_ARCH.tar.gz" > SHA256SUMS.txt
 )
 
 rm -rf "$WORK_DIR"
 
+ARCHIVE_ARCH="$ARCH"
+if [[ ${#BUILT_ARCHES[@]} -ge 2 ]]; then
+  ARCHIVE_ARCH="universal"
+elif [[ ${#BUILT_ARCHES[@]} -eq 1 ]]; then
+  ARCHIVE_ARCH="${BUILT_ARCHES[0]}"
+fi
+
 echo "Artifacts created:"
 echo "  $DIST_DIR/garcon.zip"
 echo "  $DIST_DIR/$APP_NAME.app.zip"
-echo "  $DIST_DIR/$APP_NAME-macos-$ARCH.tar.gz"
+echo "  $DIST_DIR/$APP_NAME-macos-$ARCHIVE_ARCH.tar.gz"
 echo "  $DIST_DIR/SHA256SUMS.txt"
