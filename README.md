@@ -17,8 +17,9 @@ A lightweight macOS menu bar app that shows local web servers, their ports, and 
 
 
 <br />
+<img src="assets/garcon-what-it-does.png" alt="Garçon menu bar panel screenshot" width="400">
 
-
+<br />
 ## What It Does
 
 - Finds local TCP listeners and probes only HTTP/HTTPS servers.
@@ -28,7 +29,6 @@ A lightweight macOS menu bar app that shows local web servers, their ports, and 
 - Lets you stop a server with a hover-revealed trash action.
 - Caches the last server list so the panel appears immediately.
 
-<img src="assets/garcon-what-it-does.png" alt="Garçon menu bar panel screenshot" width="400">
 
 ## Requirements
 
